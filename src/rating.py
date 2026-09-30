@@ -1,15 +1,16 @@
 """Turn a detected Setup into a STRONG BUY..STRONG SELL rating.
 
-The composite score blends three plain, inspectable ingredients:
-  - reward:risk ratio        (45%) - is the trade worth taking at all
-  - proximity to entry price (35%) - is *now* a good time to act on it
-  - setup quality            (20%) - how well-formed is the range/base
+The composite score blends four plain, inspectable ingredients:
+  - reward:risk ratio        (25%) - is the trade worth taking at all
+  - proximity to entry price (40%) - is *now* a good time to act on it
+  - setup quality            (15%) - how well-formed is the range/base
+  - volatility               (20%) - can this stock actually move fast enough
 
 Ratings answer "how good is this as a NEW swing-trade entry right now",
 not "is this a good company" or "should you hold if you already own it".
 """
 
-from .screener import Setup
+from .screener import MIN_ANNUALIZED_VOL_PCT, Setup
 
 RATING_THRESHOLDS = [
     (80, "STRONG BUY"),
@@ -22,6 +23,7 @@ DEFAULT_RATING = "STRONG SELL"
 RR_FLOOR, RR_CEIL = 1.0, 8.0  # reward:risk mapped to 0..100 across this range
 MAX_QUALITY_TOUCHES = 6
 MAX_BASING_DAYS = 30
+VOL_CEIL = 90.0  # annualized volatility at/above which a mover (SOFI/PLTR-ish) scores max
 
 
 def _clamp(x: float, lo: float = 0.0, hi: float = 100.0) -> float:
@@ -30,6 +32,12 @@ def _clamp(x: float, lo: float = 0.0, hi: float = 100.0) -> float:
 
 def _rr_score(rr: float) -> float:
     return _clamp((rr - RR_FLOOR) / (RR_CEIL - RR_FLOOR) * 100)
+
+
+def _volatility_score(setup: Setup) -> float:
+    """Every qualifying setup already cleared MIN_ANNUALIZED_VOL_PCT; this rewards the choppier
+    movers within that pool (e.g. NBIS-style) over ones just barely above the bar."""
+    return _clamp((setup.volatility_pct - MIN_ANNUALIZED_VOL_PCT) / (VOL_CEIL - MIN_ANNUALIZED_VOL_PCT) * 100)
 
 
 def _entry_proximity_score(setup: Setup) -> float:
@@ -43,7 +51,7 @@ def _entry_proximity_score(setup: Setup) -> float:
 
 
 def _quality_score(setup: Setup) -> float:
-    if setup.setup_type == "Sideways Range":
+    if setup.setup_type in ("Sideways Range", "Uptrend Pullback"):
         return _clamp(setup.touches / MAX_QUALITY_TOUCHES * 100)
     days = setup.days_since_low or 0
     return _clamp(days / MAX_BASING_DAYS * 100)
@@ -51,9 +59,10 @@ def _quality_score(setup: Setup) -> float:
 
 def score_setup(setup: Setup) -> float:
     composite = (
-        0.30 * _rr_score(setup.reward_risk)
-        + 0.50 * _entry_proximity_score(setup)
-        + 0.20 * _quality_score(setup)
+        0.25 * _rr_score(setup.reward_risk)
+        + 0.40 * _entry_proximity_score(setup)
+        + 0.15 * _quality_score(setup)
+        + 0.20 * _volatility_score(setup)
     )
     return round(composite, 1)
 

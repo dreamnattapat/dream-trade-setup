@@ -1,10 +1,27 @@
+import os
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src import data, rating, screener, universe
+from src import data, indicators, rating, screener, universe
 
 st.set_page_config(page_title="DreamTradeSetup", page_icon="📈", layout="wide")
+
+WATCHLIST_PATH = os.path.join(os.path.dirname(__file__), "watchlist.txt")
+
+
+def load_watchlist() -> str:
+    if not os.path.exists(WATCHLIST_PATH):
+        return ""
+    with open(WATCHLIST_PATH) as f:
+        tickers = [line.strip().upper() for line in f if line.strip()]
+    return ", ".join(tickers)
+
+
+def save_watchlist(tickers: tuple[str, ...]) -> None:
+    with open(WATCHLIST_PATH, "w") as f:
+        f.write("\n".join(tickers) + "\n" if tickers else "")
 
 RATING_COLORS = {
     "STRONG BUY": "#0f9d58",
@@ -59,6 +76,7 @@ def run_scan(sectors: tuple[str, ...], extra_tickers: tuple[str, ...], force_ref
                 "Target": s.target,
                 "Stop Loss": s.stop,
                 "R:R": s.reward_risk,
+                "Volatility": s.volatility_pct,
                 "Reason": "",
             }
         )
@@ -89,13 +107,14 @@ def run_scan(sectors: tuple[str, ...], extra_tickers: tuple[str, ...], force_ref
                 "Target": None,
                 "Stop Loss": None,
                 "R:R": None,
+                "Volatility": indicators.annualized_volatility_pct(df_prices["Close"]),
                 "Reason": screener.explain_no_setup(df_prices),
             }
         )
 
     if not rows:
         return pd.DataFrame(
-            columns=["Ticker", "Company", "Sector", "Setup", "Rating", "Entry Status", "Score", "Price", "Entry", "Target", "Stop Loss", "R:R", "Reason"]
+            columns=["Ticker", "Company", "Sector", "Setup", "Rating", "Entry Status", "Score", "Price", "Entry", "Target", "Stop Loss", "R:R", "Volatility", "Reason"]
         )
 
     df = pd.DataFrame(rows)
@@ -163,7 +182,7 @@ def position_size_calculator():
 
 def main():
     st.title("📈 DreamTradeSetup")
-    st.caption("Rule-based swing-trade setup finder — sideways ranges and 52-week-low basing setups, ranked for you.")
+    st.caption("Rule-based swing-trade setup finder — sideways ranges, 52-week-low basing, and uptrend pullbacks, ranked for you.")
 
     uni = load_universe()
     sectors = sorted(uni["sector"].unique().tolist())
@@ -174,10 +193,14 @@ def main():
         selected_sectors = st.multiselect("Industry / Sector", sectors, default=default_sectors)
         extra_input = st.text_input(
             "Add specific tickers",
+            value=load_watchlist(),
             placeholder="e.g. SOFI, PLTR",
-            help="Force-include tickers that aren't in the S&P 500/400 universe (e.g. SOFI), regardless of the sector filter above.",
+            help="Force-include tickers that aren't in the S&P 500/400 universe, regardless of the sector filter above. Pre-filled from your saved watchlist.",
         )
         extra_tickers = tuple(sorted({t.strip().upper() for t in extra_input.split(",") if t.strip()}))
+        if st.button("💾 Save as my watchlist", use_container_width=True):
+            save_watchlist(extra_tickers)
+            st.success(f"Saved {len(extra_tickers)} tickers to your watchlist.")
         force_refresh = st.checkbox("Force refresh price data", value=False, help="Bypass today's cache and re-download from Yahoo Finance.")
         run_clicked = st.button("🔍 Run scan", type="primary", use_container_width=True)
         st.divider()
@@ -240,6 +263,7 @@ def main():
             "Stop Loss": "${:.2f}",
             "Score": "{:.1f}",
             "R:R": "{:.2f}",
+            "Volatility": "{:.0f}%",
         },
         na_rep="–",
     )
@@ -264,14 +288,15 @@ def main():
             badges += f"&nbsp;&nbsp;<span style='padding:4px 10px; border:1px solid #ccc; border-radius:4px; font-weight:600; font-size:1.1rem;'>{selected['Entry Status']}</span>"
         st.markdown(badges, unsafe_allow_html=True)
         if selected["Rating"] == "FILTERED OUT":
-            st.write(f"**Current price:** ${selected['Price']:.2f}")
+            st.write(f"**Current price:** ${selected['Price']:.2f}  |  **Volatility:** {selected['Volatility']:.0f}% annualized")
             st.write(f"**Why it's filtered out:** {selected['Reason']}")
         else:
-            m1, m2, m3, m4 = st.columns(4)
+            m1, m2, m3, m4, m5 = st.columns(5)
             m1.metric("Entry", f"${selected['Entry']:.2f}")
             m2.metric("Target", f"${selected['Target']:.2f}")
             m3.metric("Stop Loss", f"${selected['Stop Loss']:.2f}")
             m4.metric("Reward:Risk", f"{selected['R:R']:.2f}")
+            m5.metric("Volatility", f"{selected['Volatility']:.0f}%")
         price_chart(selected["Ticker"], selected, st.session_state.price_cache)
     else:
         st.caption("Select a row above to see the price chart with entry/target/stop levels.")

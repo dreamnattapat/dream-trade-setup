@@ -27,3 +27,17 @@ def count_touches(series: pd.Series, level: float, tolerance_pct: float) -> int:
     """Count how many bars traded within `tolerance_pct` of `level`."""
     band = level * tolerance_pct
     return int(((series - level).abs() <= band).sum())
+
+
+def annualized_volatility_pct(close: pd.Series, window: int = 90) -> float:
+    """Annualized realized volatility (%) from daily log returns over the trailing `window` days.
+
+    This is how "fast" a stock actually moves, independent of trend direction - a low-beta
+    stalwart (steady compounder) and a choppy mover can both form a technically valid range,
+    but only the latter is likely to deliver a swing-trade-sized move in weeks rather than years.
+    """
+    recent = close.tail(window)
+    log_returns = np.log(recent / recent.shift(1)).dropna()
+    if len(log_returns) < window * 0.5:
+        return 0.0
+    return float(log_returns.std() * np.sqrt(252) * 100)
