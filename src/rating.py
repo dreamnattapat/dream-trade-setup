@@ -63,3 +63,23 @@ def rate(score: float) -> str:
         if score >= threshold:
             return label
     return DEFAULT_RATING
+
+
+AT_ENTRY_PCT = 1.0  # price at or within 1% above entry counts as "hit"
+NEAR_ENTRY_PCT = 5.0  # within 5% above entry is close enough to watch closely
+
+ENTRY_STATUS_ORDER = ["At Entry", "Near Entry", "Waiting for Pullback"]
+
+
+def entry_status(setup: Setup) -> str:
+    """Is *today's* price actually at the entry level, or still waiting for a pullback?
+
+    This is deliberately separate from the overall rating: a setup can be an excellent
+    STRONG BUY candidate on quality/R:R while still trading well above its entry price.
+    """
+    pct_above = (setup.current_price - setup.entry) / setup.entry * 100
+    if pct_above <= AT_ENTRY_PCT:
+        return "At Entry"
+    if pct_above <= NEAR_ENTRY_PCT:
+        return "Near Entry"
+    return "Waiting for Pullback"

@@ -151,6 +151,33 @@ def _detect_near_52w_low(ticker: str, company: str, sector: str, df: pd.DataFram
     )
 
 
+def explain_no_setup(df: pd.DataFrame) -> str:
+    """Plain-language reason a ticker matched neither detector - for tickers a user explicitly asked about."""
+    reasons = []
+
+    window = df.tail(SIDEWAYS_WINDOW_DAYS)
+    if len(window) >= SIDEWAYS_WINDOW_DAYS * 0.8:
+        slope = linreg_slope_pct(window["Close"])
+        drift_pct = slope * SIDEWAYS_WINDOW_DAYS * 100
+        if slope > SIDEWAYS_MAX_SLOPE:
+            reasons.append(f"trending up (~{drift_pct:.0f}% drift over 6 months, not sideways)")
+        elif slope < -SIDEWAYS_MAX_SLOPE:
+            reasons.append(f"trending down (~{drift_pct:.0f}% drift over 6 months, not a stable range)")
+
+    year_window = df.tail(YEAR_WINDOW_DAYS)
+    if len(year_window) >= YEAR_WINDOW_DAYS * 0.6:
+        low_52w = float(year_window["Low"].min())
+        current = float(df["Close"].iloc[-1])
+        if low_52w > 0:
+            pct_above = (current - low_52w) / low_52w * 100
+            if pct_above > NEAR_LOW_MAX_PCT_ABOVE * 100:
+                reasons.append(f"{pct_above:.0f}% above its 52-week low")
+
+    if not reasons:
+        reasons.append("no qualifying sideways range or 52-week-low setup detected right now")
+    return "; ".join(reasons)
+
+
 def scan(universe: pd.DataFrame, price_data: dict[str, pd.DataFrame]) -> list[Setup]:
     """Run both detectors over every ticker with available price data."""
     setups: list[Setup] = []

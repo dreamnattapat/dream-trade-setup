@@ -57,10 +57,9 @@ def fetch_history(tickers: list[str], force_refresh: bool = False) -> dict[str, 
         if raw.empty:
             continue
 
-        single_ticker = len(batch) == 1
         for t in batch:
             try:
-                df = raw if single_ticker else raw[t]
+                df = raw[t]
             except KeyError:
                 continue
             df = df.dropna(how="all")
