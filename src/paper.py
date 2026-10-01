@@ -30,6 +30,8 @@ from . import data, rating, screener, universe
 
 LEDGER_PATH = os.path.join(os.path.dirname(__file__), "..", "paper_trades.csv")
 
+# IT only: adding Energy, Financials, Health Care, Industrials and Materials lowered returns in
+# both backtest years (the unseen year fell from +12.8% to +1.1%), likely because their stocks swing less.
 PAPER_SECTORS = ["Information Technology"]
 PAPER_RATINGS = {"STRONG BUY", "BUY"}
 PAPER_ENTRY_STATUS = "At Entry"

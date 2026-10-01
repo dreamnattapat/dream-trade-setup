@@ -10,6 +10,9 @@ from src import data, indicators, paper, rating, screener, universe
 st.set_page_config(page_title="DreamTradeSetup", page_icon="📈", layout="wide")
 
 WATCHLIST_PATH = os.path.join(os.path.dirname(__file__), "watchlist.txt")
+DEFAULT_SECTORS = [
+    "Information Technology", "Energy", "Financials", "Health Care", "Industrials", "Materials",
+]
 
 
 def load_watchlist() -> str:
@@ -201,7 +204,7 @@ def main():
 
     with st.sidebar:
         st.header("Filters")
-        default_sectors = ["Information Technology"] if "Information Technology" in sectors else sectors
+        default_sectors = [s for s in DEFAULT_SECTORS if s in sectors] or sectors
         selected_sectors = st.multiselect("Industry / Sector", sectors, default=default_sectors)
         extra_input = st.text_input(
             "Add specific tickers",
