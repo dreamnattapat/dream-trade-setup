@@ -70,7 +70,8 @@ same as in the backtest.
 
 The cycle only buys on days it runs, so missed days mean missed entries. `make schedule`
 installs a macOS background job that runs it every day at 07:00 local time (after the US close in
-Thailand). It doesn't need the app open; if the Mac is asleep at 07:00, it runs on wake. Output
+Thailand). It doesn't need the app open; if the Mac is asleep at 07:00, it runs on wake, and if it was shut
+down, it runs at the next login. Output
 goes to `data/paper_schedule.log`, and `make unschedule` removes it.
 
 Every trade is shadowed by the same baht in SPY over the same dates, so the summary cards

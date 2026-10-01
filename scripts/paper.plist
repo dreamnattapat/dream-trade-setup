@@ -13,7 +13,10 @@
         <string>-m</string>
         <string>src.paper</string>
     </array>
-    <!-- 07:00 local time, every day. If the Mac is asleep then, it runs on wake. -->
+    <!-- 07:00 local time, every day. If the Mac is asleep then, it runs on wake; if it was
+         shut down, RunAtLoad runs it at the next login. An extra run in a day is harmless. -->
+    <key>RunAtLoad</key>
+    <true/>
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
