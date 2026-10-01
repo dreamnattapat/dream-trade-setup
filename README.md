@@ -64,6 +64,15 @@ Money is in Thai baht: each trade converts baht to US dollars at that day's real
 back again when it sells, so exchange-rate moves count in P&L, just as they would for a Thai
 investor. Stock prices, stops and targets stay in US dollars.
 
+Trades are only decided on finished trading days: if you open the page while the US market is
+still trading, today's half-formed bar is ignored, so a paper fill is always a daily close, the
+same as in the backtest.
+
+The cycle only buys on days it runs, so missed days mean missed entries. `make schedule`
+installs a macOS background job that runs it every day at 07:00 local time (after the US close in
+Thailand). It doesn't need the app open; if the Mac is asleep at 07:00, it runs on wake. Output
+goes to `data/paper_schedule.log`, and `make unschedule` removes it.
+
 Every trade is shadowed by the same baht in SPY over the same dates, so the summary cards
 (P&L, win rate, profit factor, average R, max drawdown, hold time) answer "did this beat just
 buying the index?" Trades are stored in `paper_trades.csv`. Settings live at the top of

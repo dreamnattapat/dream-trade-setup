@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template for `make schedule`: __REPO__ is replaced with this repo's absolute path. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.dreamtradesetup.paper</string>
+    <key>WorkingDirectory</key>
+    <string>__REPO__</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__REPO__/venv/bin/python3</string>
+        <string>-m</string>
+        <string>src.paper</string>
+    </array>
+    <!-- 07:00 local time, every day. If the Mac is asleep then, it runs on wake. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>__REPO__/data/paper_schedule.log</string>
+    <key>StandardErrorPath</key>
+    <string>__REPO__/data/paper_schedule.log</string>
+</dict>
+</plist>

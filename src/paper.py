@@ -7,7 +7,7 @@ Each cycle (run whenever the app's Paper Trading page opens, or `make paper`):
      Entry Status is "At Entry" - one position per ticker at a time.
 
 Fill rules are deliberately conservative so results aren't flattered:
-  - Entries fill at the latest close at the moment the cycle runs.
+  - Entries fill at the latest finished day's close; a bar still forming mid-session is ignored.
   - A bar that opens beyond the stop or target (a gap) fills at that open, not at the level.
   - A bar whose range touches both the stop and the target is settled with that day's hourly
     bars (whichever level an hour reached first). If hourly data is unavailable, or a single
@@ -36,6 +36,8 @@ PAPER_ENTRY_STATUS = "At Entry"
 POSITION_SIZE_THB = 10_000.0
 BENCHMARK = "SPY"
 FX_TICKER = "THB=X"  # Yahoo's USD/THB rate: baht per 1 US dollar
+US_MARKET_TZ = "America/New_York"
+BARS_FINAL_AFTER = dt.time(16, 30)  # Yahoo's daily bar settles shortly after the 4pm close
 
 COLUMNS = [
     "id", "ticker", "company", "setup", "rating", "score",
@@ -201,11 +203,26 @@ def run_cycle(force_refresh: bool = False) -> tuple[pd.DataFrame, dict[str, pd.D
     if FX_TICKER not in price_data:
         raise RuntimeError("Couldn't download the USD/THB exchange rate from Yahoo Finance - try again shortly.")
 
-    ledger = _update_open_trades(ledger, price_data)
-    setups = screener.scan(uni, price_data)
-    ledger = _open_new_trades(ledger, setups, price_data)
+    # Trade only on finished days; the returned price_data keeps today's live bar for display.
+    settled = _completed_bars(price_data)
+    ledger = _update_open_trades(ledger, settled)
+    setups = screener.scan(uni, settled)
+    ledger = _open_new_trades(ledger, setups, settled)
     save_ledger(ledger)
     return ledger, price_data
+
+
+def _completed_bars(price_data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """Drop today's bar while the US session is still open (or just closed and not yet final).
+
+    Otherwise opening the app mid-session would buy at an intraday price and judge stops and
+    targets against a half-formed bar - unlike the backtest, which only ever sees full days.
+    """
+    now = pd.Timestamp.now(tz=US_MARKET_TZ)
+    if now.time() >= BARS_FINAL_AFTER:
+        return price_data
+    today = pd.Timestamp(now.date())
+    return {t: df[df.index < today] for t, df in price_data.items()}
 
 
 def mark_to_market(ledger: pd.DataFrame, price_data: dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -414,7 +431,9 @@ def load_backtest(period: str = "recent") -> tuple[pd.DataFrame, dict[str, pd.Da
 
 
 if __name__ == "__main__":
-    ledger, prices = run_cycle()
+    # Always download fresh: the daily cache may hold a mid-session bar from earlier the same day.
+    print(f"--- {dt.datetime.now():%Y-%m-%d %H:%M} ---")
+    ledger, prices = run_cycle(force_refresh=True)
     stats = summarize(ledger, prices)
     print(f"Paper trades: {stats['total_trades']} ({stats['open_trades']} open, {stats['closed_trades']} closed)")
     print(f"Total P&L: {stats['total_pnl']:,.2f} baht  vs same baht in SPY: {stats['spy_pnl']:,.2f} baht")
