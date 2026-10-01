@@ -2,7 +2,7 @@ VENV := venv
 PYTHON := $(VENV)/bin/python3
 STREAMLIT := $(VENV)/bin/streamlit
 
-.PHONY: install run stop
+.PHONY: install run stop paper
 
 install:
 	python3 -m venv $(VENV)
@@ -14,3 +14,6 @@ run:
 
 stop:
 	lsof -ti:8501 -sTCP:LISTEN | xargs -r kill
+
+paper:
+	$(PYTHON) -m src.paper

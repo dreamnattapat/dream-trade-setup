@@ -3,8 +3,8 @@
 Three setup types are detected, purely from price/volume history:
 
 1. SIDEWAYS RANGE - the stock has been trading flat for ~6 months inside a
-   support/resistance channel. Entry near support, target near resistance,
-   stop below support.
+   support/resistance channel. Entry near support, target at the middle of the
+   channel, stop below the channel's lowest low (where the range actually breaks).
 2. NEAR 52-WEEK LOW - the stock has been pushed down to (or near) its
    52-week low and shows early signs of basing rather than still free-falling.
    Entry near current price, target at a recent local high, stop below the low.
@@ -39,6 +39,12 @@ SIDEWAYS_MIN_RANGE_PCT = 0.08  # channel must be at least 8% wide to be worth tr
 SIDEWAYS_MAX_RANGE_PCT = 0.70  # wider than this looks like a trend/volatility, not a range
 SIDEWAYS_TOUCH_TOLERANCE = 0.03  # within 3% of support/resistance counts as a "touch"
 SIDEWAYS_MIN_TOTAL_TOUCHES = 3  # combined support+resistance touches required
+# Backtested over the past year (see the Paper Trading backtest): a stop 1 ATR under the
+# 10th-percentile "support" got shaken out by ordinary noise in a median 4 days, and a target at
+# the top of the range was rarely reached. A stop under the range's true floor plus a target at
+# its midpoint took the setup from a 13% to a ~59% win rate, profitable in both halves of the year.
+SIDEWAYS_TARGET_FRACTION = 0.5  # take profit this far from support toward resistance (0.5 = the middle)
+SIDEWAYS_STOP_ATR_BUFFER = 0.5  # stop this many ATRs below the lowest low of the 6-month window
 
 NEAR_LOW_MAX_PCT_ABOVE = 0.08  # "near" the 52w low = within 8% of it
 NEAR_LOW_MIN_DAYS_SINCE_LOW = 4  # avoid stocks making fresh lows in the last few days
@@ -56,6 +62,16 @@ UPTREND_MAX_PULLBACK_PCT = 0.25  # more than 25% off the high risks the trend ac
 UPTREND_TOUCH_TOLERANCE = 0.03  # within 3% of the rising SMA counts as a "touch"
 UPTREND_MIN_TOUCHES = 2  # the average must have already acted as support at least twice
 UPTREND_STOP_ATR_MULT = 1.0  # stop = pullback low minus this many ATRs
+
+# Market-dip rule for Uptrend Pullback. Backtested over two years: pullbacks bought while the whole
+# market was dipping (S&P 500 at or below its 50-day average) won ~74% of the time and made nearly
+# all of this setup's profit; pullbacks while the market was fine broke even - a strong stock that
+# drops 15-25% while everything else is calm usually has a company-specific problem. The rule was
+# found on Oct 2025-Sep 2026 and then held up on Oct 2024-Sep 2025, which it had never seen
+# (that year: -4,645 baht without it, +6,024 with it).
+MARKET_TICKER = "SPY"
+MARKET_SMA_DAYS = 50
+UPTREND_MAX_MARKET_GAP_PCT = 0.0  # S&P 500 must be at most this % above its 50-day average
 
 
 @dataclass
@@ -107,8 +123,8 @@ def _detect_sideways(ticker: str, company: str, sector: str, df: pd.DataFrame) -
         return None
 
     entry = support
-    target = resistance
-    stop = support - atr14
+    target = support + SIDEWAYS_TARGET_FRACTION * (resistance - support)
+    stop = float(window["Low"].min()) - SIDEWAYS_STOP_ATR_BUFFER * atr14
     if stop <= 0 or entry <= stop:
         return None
 
@@ -251,9 +267,13 @@ def _detect_uptrend_pullback(ticker: str, company: str, sector: str, df: pd.Data
     )
 
 
-def explain_no_setup(df: pd.DataFrame) -> str:
-    """Plain-language reason a ticker matched neither detector - for tickers a user explicitly asked about."""
+def explain_no_setup(df: pd.DataFrame, market_gap: float | None = None) -> str:
+    """Plain-language reason a ticker matched no detector - for tickers a user explicitly asked about."""
     reasons = []
+
+    if market_gap is not None and market_gap > UPTREND_MAX_MARKET_GAP_PCT and _detect_uptrend_pullback("", "", "", df):
+        return (f"Uptrend Pullback setup, but paused: the S&P 500 is {market_gap:.1f}% above its 50-day average. "
+                "This setup only works when the whole market is dipping")
 
     volatility = annualized_volatility_pct(df["Close"])
     if volatility < MIN_ANNUALIZED_VOL_PCT:
@@ -309,10 +329,30 @@ def explain_no_setup(df: pd.DataFrame) -> str:
     return "; ".join(reasons)
 
 
+def market_gap_pct(price_data: dict[str, pd.DataFrame]) -> float | None:
+    """How far (%) the S&P 500 sits above (+) or below (-) its 50-day average on the latest bar."""
+    market = price_data.get(MARKET_TICKER)
+    if market is None or len(market) < MARKET_SMA_DAYS:
+        return None
+    close = market["Close"]
+    return float((close.iloc[-1] / close.tail(MARKET_SMA_DAYS).mean() - 1) * 100)
+
+
+def uptrend_pullbacks_allowed(price_data: dict[str, pd.DataFrame]) -> bool:
+    gap = market_gap_pct(price_data)
+    return gap is not None and gap <= UPTREND_MAX_MARKET_GAP_PCT
+
+
 def scan(universe: pd.DataFrame, price_data: dict[str, pd.DataFrame]) -> list[Setup]:
-    """Run all three detectors over every ticker with available price data."""
+    """Run the detectors over every ticker with available price data.
+
+    `price_data` must include MARKET_TICKER (SPY); without it Uptrend Pullback can't check the
+    market-dip rule, so it doesn't fire.
+    """
     setups: list[Setup] = []
-    detectors = [_detect_sideways, _detect_near_52w_low, _detect_uptrend_pullback]
+    detectors = [_detect_sideways, _detect_near_52w_low]
+    if uptrend_pullbacks_allowed(price_data):
+        detectors.append(_detect_uptrend_pullback)
     for _, row in universe.iterrows():
         ticker = row["ticker"]
         df = price_data.get(ticker)

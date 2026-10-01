@@ -4,7 +4,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src import data, indicators, rating, screener, universe
+import paper_page
+from src import data, indicators, paper, rating, screener, universe
 
 st.set_page_config(page_title="DreamTradeSetup", page_icon="📈", layout="wide")
 
@@ -56,7 +57,8 @@ def build_universe(sectors: list[str], extra_tickers: tuple[str, ...]) -> pd.Dat
 @st.cache_data(show_spinner=False, ttl=6 * 3600)
 def run_scan(sectors: tuple[str, ...], extra_tickers: tuple[str, ...], force_refresh: bool) -> pd.DataFrame:
     uni = build_universe(list(sectors), extra_tickers)
-    price_data = data.fetch_history(uni["ticker"].tolist(), force_refresh=force_refresh)
+    price_data = data.fetch_history(uni["ticker"].tolist() + [screener.MARKET_TICKER], force_refresh=force_refresh)
+    market_gap = screener.market_gap_pct(price_data)
     setups = screener.scan(uni, price_data)
 
     rows = []
@@ -108,7 +110,7 @@ def run_scan(sectors: tuple[str, ...], extra_tickers: tuple[str, ...], force_ref
                 "Stop Loss": None,
                 "R:R": None,
                 "Volatility": indicators.annualized_volatility_pct(df_prices["Close"]),
-                "Reason": screener.explain_no_setup(df_prices),
+                "Reason": screener.explain_no_setup(df_prices, market_gap),
             }
         )
 
@@ -162,20 +164,30 @@ def price_chart(ticker: str, row: pd.Series, price_data: dict[str, pd.DataFrame]
     st.plotly_chart(fig, use_container_width=True)
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def usd_thb_rate() -> float | None:
+    fx = data.fetch_history([paper.FX_TICKER]).get(paper.FX_TICKER)
+    return float(fx["Close"].iloc[-1]) if fx is not None else None
+
+
 def position_size_calculator():
     st.subheader("Position size calculator")
-    account_size = st.number_input("Account size ($)", min_value=0.0, value=10000.0, step=500.0)
+    account_size = st.number_input("Account size (฿)", min_value=0.0, value=300000.0, step=10000.0)
     risk_pct = st.slider("Risk per trade (%)", min_value=0.25, max_value=5.0, value=1.0, step=0.25)
-    entry = st.number_input("Entry price", min_value=0.0, value=0.0, step=0.01)
-    stop = st.number_input("Stop loss price", min_value=0.0, value=0.0, step=0.01)
+    entry = st.number_input("Entry price (US$)", min_value=0.0, value=0.0, step=0.01)
+    stop = st.number_input("Stop loss price (US$)", min_value=0.0, value=0.0, step=0.01)
 
-    if entry > 0 and stop > 0 and entry > stop:
-        risk_dollars = account_size * (risk_pct / 100)
-        per_share_risk = entry - stop
-        shares = int(risk_dollars // per_share_risk)
-        st.metric("Risk amount", f"${risk_dollars:,.2f}")
+    rate = usd_thb_rate()
+    if not rate:
+        st.caption("Couldn't load today's USD/THB rate - try again shortly.")
+    elif entry > 0 and stop > 0 and entry > stop:
+        risk_baht = account_size * (risk_pct / 100)
+        per_share_risk_baht = (entry - stop) * rate
+        shares = int(risk_baht // per_share_risk_baht)
+        st.metric("Risk amount", f"฿{risk_baht:,.2f}")
         st.metric("Suggested shares", f"{shares:,}")
-        st.metric("Position value", f"${shares * entry:,.2f}")
+        st.metric("Position value", f"฿{shares * entry * rate:,.2f}", help=f"US${shares * entry:,.2f} at {rate:.2f} baht per dollar")
+        st.caption(f"Using today's rate: {rate:.2f} baht per US dollar")
     else:
         st.caption("Enter an entry price above the stop loss to calculate size.")
 
@@ -236,6 +248,12 @@ def main():
     col2.metric("Strong Buy / Buy", int(qualifying["Rating"].isin(["STRONG BUY", "BUY"]).sum()))
     col3.metric("At Entry now", int((qualifying["Entry Status"] == "At Entry").sum()))
     col4.metric("Sectors scanned", len(selected_sectors))
+
+    gap = screener.market_gap_pct(data.fetch_history([screener.MARKET_TICKER]))
+    if gap is not None and gap > screener.UPTREND_MAX_MARKET_GAP_PCT:
+        st.info(f"**Uptrend Pullback signals are paused.** The S&P 500 is {gap:.1f}% above its 50-day average. "
+                "Backtests showed this setup only pays off when the whole market is dipping, so it switches back on "
+                "when the S&P 500 drops to or below that average.", icon="⏸️")
 
     st.subheader("Ranked setups")
     display_df = df.copy()
@@ -305,5 +323,7 @@ def main():
     st.download_button("⬇️ Export as CSV", csv, "dream_trade_setups.csv", "text/csv")
 
 
-if __name__ == "__main__":
-    main()
+st.navigation([
+    st.Page(main, title="Scanner", icon="📈", default=True),
+    st.Page(paper_page.render, title="Paper Trading", icon="🧪", url_path="paper"),
+]).run()

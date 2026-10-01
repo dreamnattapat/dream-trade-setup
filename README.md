@@ -19,7 +19,9 @@ Yahoo Finance data.
    without ever delivering a swing-sized move in weeks rather than years:
    - **Sideways Range**: flat trend over the last 6 months, trading inside a
      support/resistance channel that's been tested at least 3 times. Entry = support,
-     target = resistance, stop = support minus 1×ATR(14).
+     target = the middle of the channel, stop = half an ATR below the channel's lowest low.
+     (The original rules - target at the top, stop 1 ATR under support - won only 13% of
+     backtested trades; these won ~59%.)
    - **Near 52-Week Low**: price within 8% of its 52-week low, off the low for a few days
      (not making fresh lows right now) and not in a sharp ongoing plunge. Entry = just
      above the 52-week low, target = the local high since the bottom, stop = 5% below
@@ -28,7 +30,10 @@ Yahoo Finance data.
      at least twice) that has pulled back 5–25% off its recent high without breaking that
      trend. Entry = the rising 50-day average, target = the recent high, stop = pullback
      low minus 1×ATR(14). This is the "buy the dip in a mover" case (e.g. NBIS) that the
-     other two detectors miss, since they're both mean-reversion strategies.
+     other two detectors miss, since they're both mean-reversion strategies. It only fires
+     while the S&P 500 is at or below its 50-day average: backtests showed pullbacks bought
+     during a market-wide dip won ~74% of the time, while pullbacks in a calm market broke
+     even (the Scanner shows a banner while it's paused).
 3. **Rate** — each setup gets a 0–100 composite score from reward:risk, how close the
    current price is to the ideal entry right now, how well-formed the setup is, and how
    volatile the stock is. The score maps to STRONG BUY / BUY / HOLD / SELL / STRONG SELL.
@@ -41,6 +46,36 @@ Yahoo Finance data.
    with the built-in risk calculator. A ticker you explicitly typed in always shows up even
    when it doesn't qualify for any setup — marked **Filtered Out** with a plain-language
    reason instead of silently disappearing.
+
+## Paper trading
+
+The **Paper Trading** page (sidebar) forward-tests the screener's own signals with simulated
+money before you trust them with real money. Each time the page opens (or you run
+`make paper`), it:
+
+1. Walks every open position through each new daily bar and closes it at its take-profit or
+   stop-loss. Gaps fill at the open. If one day touches both levels, that day's hourly prices
+   decide which came first (fetched only for those rare days); if hourly data can't settle it,
+   it counts as a stop-out.
+2. Buys every Information Technology STRONG BUY / BUY setup that is **At Entry**, ฿10,000 per
+   trade, one position per ticker.
+
+Money is in Thai baht: each trade converts baht to US dollars at that day's real USD/THB rate and
+back again when it sells, so exchange-rate moves count in P&L, just as they would for a Thai
+investor. Stock prices, stops and targets stay in US dollars.
+
+Every trade is shadowed by the same baht in SPY over the same dates, so the summary cards
+(P&L, win rate, profit factor, average R, max drawdown, hold time) answer "did this beat just
+buying the index?" Trades are stored in `paper_trades.csv`. Settings live at the top of
+[`src/paper.py`](src/paper.py).
+
+The **Backtest** tab replays those exact rules over two separate years (~20 seconds each). Each
+replayed day only sees the 13 months of prices that existed up to that day, so no future data
+leaks in. The rules were tuned while looking at the past year, so the **year before** is the
+honest test of whether the edge is real. It shows strategy return vs. buying and holding the
+S&P 500 with the same capital, peak capital needed, and a per-setup breakdown. Even the honest
+year is optimistic, since it uses today's sector list (survivorship bias). The live tab is the
+real proof.
 
 ## Setup
 
